@@ -18,6 +18,7 @@ interface SidebarProps {
   onFileSelect: (path: string) => void;
   onRefresh: () => Promise<void>;
   onDelete: (path: string) => void;
+  width?: number;
 }
 
 interface CreatingState {
@@ -311,6 +312,7 @@ export default function Sidebar({
   onFileSelect,
   onRefresh,
   onDelete: onDeleteProp,
+  width,
 }: SidebarProps) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [creating, setCreating] = useState<CreatingState | null>(null);
@@ -413,6 +415,7 @@ export default function Sidebar({
 
   return (
     <aside
+      style={width !== undefined ? { width } : undefined}
       className="w-[var(--sidebar-width)] bg-[var(--color-bg-secondary)]
                  border-r border-[var(--color-border)]
                  flex flex-col overflow-hidden shrink-0 select-none"

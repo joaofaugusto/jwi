@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import TitleBar from "./components/TitleBar";
 import Sidebar from "./components/Sidebar";
 import Editor from "./components/Editor";
@@ -13,6 +13,31 @@ export default function App() {
   const [content, setContent] = useState("");
   const [isDirty, setIsDirty] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [sidebarWidth, setSidebarWidth] = useState(240);
+  const isResizing = useRef(false);
+
+  const handleResizeMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    isResizing.current = true;
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+
+    const onMouseMove = (ev: MouseEvent) => {
+      if (!isResizing.current) return;
+      setSidebarWidth(Math.max(160, Math.min(480, ev.clientX)));
+    };
+
+    const onMouseUp = () => {
+      isResizing.current = false;
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      window.removeEventListener("mousemove", onMouseMove);
+      window.removeEventListener("mouseup", onMouseUp);
+    };
+
+    window.addEventListener("mousemove", onMouseMove);
+    window.addEventListener("mouseup", onMouseUp);
+  }, []);
 
   // Load vault on mount
   useEffect(() => {
@@ -107,6 +132,14 @@ export default function App() {
             onFileSelect={openFile}
             onRefresh={refreshTree}
             onDelete={handleDelete}
+            width={sidebarWidth}
+          />
+          {/* Drag handle */}
+          <div
+            onMouseDown={handleResizeMouseDown}
+            className="w-[4px] shrink-0 cursor-col-resize
+                       hover:bg-[var(--color-accent)] transition-colors
+                       [-webkit-app-region:no-drag]"
           />
         )}
         <div className="flex-1 min-w-0 flex">
