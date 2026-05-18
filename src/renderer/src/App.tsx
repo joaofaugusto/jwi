@@ -90,7 +90,7 @@ export default function App() {
 
   return (
     <div className="flex flex-col h-full">
-      <TitleBar subtitle={fileName} isDirty={isDirty} />
+      <TitleBar subtitle={fileName} isDirty={isDirty} onSearch={() => setIsSearchOpen(true)} />
       {isSearchOpen && (
         <SearchPalette
           tree={tree}

@@ -1,11 +1,12 @@
-import { Minus, X } from "lucide-react";
+import { Minus, X, Search } from "lucide-react";
 
 interface Props {
   subtitle?: string;
   isDirty?: boolean;
+  onSearch?: () => void;
 }
 
-export default function TitleBar({ subtitle, isDirty }: Props) {
+export default function TitleBar({ subtitle, isDirty, onSearch }: Props) {
   return (
     <div
       className="flex items-center shrink-0 h-[var(--titlebar-height)]
@@ -77,7 +78,28 @@ export default function TitleBar({ subtitle, isDirty }: Props) {
         </span>
       </div>
 
-      <div className="w-[100px]" />
+      <div className="w-[8px] shrink-0" />
+
+      {/* Search button */}
+      <div className="shrink-0 flex items-center pr-3 [-webkit-app-region:no-drag]">
+        <button
+          onClick={onSearch}
+          className="flex items-center gap-1.5 h-[22px] px-2.5
+                     rounded-[6px] bg-[var(--color-bg-secondary)]
+                     border border-[var(--color-border)]
+                     text-[11px] text-[var(--color-text-tertiary)]
+                     hover:text-[var(--color-text)] hover:border-[var(--color-border-hover)]
+                     transition-colors cursor-pointer select-none"
+        >
+          <Search size={11} strokeWidth={2.5} />
+          <span>Search</span>
+          <span
+            className="ml-0.5 opacity-60 font-mono tracking-tight"
+          >
+            ⌘K
+          </span>
+        </button>
+      </div>
     </div>
   );
 }
