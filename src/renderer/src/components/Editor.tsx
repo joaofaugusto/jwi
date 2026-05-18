@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { marked } from "marked";
-import { Eye, Pencil, ChevronUp, ChevronDown, X } from "lucide-react";
+import { Eye, Pencil, ChevronUp, ChevronDown, X, Bold, Italic, Strikethrough, Code, Highlighter } from "lucide-react";
 
 interface Props {
   path: string;
@@ -47,6 +47,24 @@ const TEXT_STYLE: React.CSSProperties = {
   wordBreak: "break-word",
 };
 
+interface ToolbarState {
+  clientX: number;
+  clientY: number;
+  start: number;
+  end: number;
+}
+
+/** Returns true only if `text` is exactly wrapped with `open`/`close` markers,
+ *  with special handling to distinguish `*` from `**`. */
+function isWrappedWith(text: string, open: string, close: string): boolean {
+  if (text.length <= open.length + close.length) return false;
+  if (!text.startsWith(open) || !text.endsWith(close)) return false;
+  // Prevent `*` from matching `**wrapped**`
+  if (open === "*" && text[1] === "*") return false;
+  if (close === "*" && text[text.length - 2] === "*") return false;
+  return true;
+}
+
 export default function Editor({ path, content, initialScrollTop, onChange, onScrollTop }: Props) {
   const [mode, setMode] = useState<"edit" | "preview">("edit");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -87,7 +105,37 @@ export default function Editor({ path, content, initialScrollTop, onChange, onSc
 
   const charCount = content.length;
 
-  // Focus textarea when switching to edit mode
+  const [toolbar, setToolbar] = useState<ToolbarState | null>(null);
+
+  const applyFormatToRange = useCallback(
+    (marker: string, start: number, end: number, closeMarker?: string) => {
+      const ta = textareaRef.current;
+      if (!ta || start === end) return;
+      const close = closeMarker ?? marker;
+      const selected = content.substring(start, end);
+      const before = content.substring(0, start);
+      const after = content.substring(end);
+      if (isWrappedWith(selected, marker, close)) {
+        const unwrapped = selected.slice(marker.length, selected.length - close.length);
+        onChange(before + unwrapped + after);
+        setTimeout(() => { ta.selectionStart = start; ta.selectionEnd = start + unwrapped.length; }, 0);
+      } else {
+        onChange(before + `${marker}${selected}${close}` + after);
+        setTimeout(() => { ta.selectionStart = start + marker.length; ta.selectionEnd = end + marker.length; }, 0);
+      }
+    },
+    [content, onChange],
+  );
+
+  const handleTextareaMouseUp = useCallback(
+    (e: React.MouseEvent<HTMLTextAreaElement>) => {
+      const ta = e.currentTarget;
+      const { selectionStart: start, selectionEnd: end } = ta;
+      if (start === end) { setToolbar(null); return; }
+      setToolbar({ clientX: e.clientX, clientY: e.clientY, start, end });
+    },
+    [],
+  );
   useEffect(() => {
     if (mode === "edit") {
       setTimeout(() => textareaRef.current?.focus(), 0);
@@ -166,6 +214,8 @@ export default function Editor({ path, content, initialScrollTop, onChange, onSc
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+      const ta = e.currentTarget;
+
       // Cmd/Ctrl+S — force save
       if ((e.ctrlKey || e.metaKey) && e.key === "s") {
         e.preventDefault();
@@ -183,45 +233,45 @@ export default function Editor({ path, content, initialScrollTop, onChange, onSc
       // Tab — insert 2 spaces
       if (e.key === "Tab") {
         e.preventDefault();
-        const ta = e.currentTarget;
         const start = ta.selectionStart;
         const end = ta.selectionEnd;
         const next = content.substring(0, start) + "  " + content.substring(end);
         onChange(next);
-        setTimeout(() => {
-          ta.selectionStart = ta.selectionEnd = start + 2;
-        }, 0);
+        setTimeout(() => { ta.selectionStart = ta.selectionEnd = start + 2; }, 0);
         return;
       }
 
-      // Cmd/Ctrl+H — toggle ==highlight== on selection
+      // Formatting shortcuts — all require a selection
+      const start = ta.selectionStart;
+      const end = ta.selectionEnd;
+
+      if ((e.ctrlKey || e.metaKey) && e.key === "b") {
+        e.preventDefault();
+        applyFormatToRange("**", start, end);
+        return;
+      }
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key === "i") {
+        e.preventDefault();
+        applyFormatToRange("*", start, end);
+        return;
+      }
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === "s") {
+        e.preventDefault();
+        applyFormatToRange("~~", start, end);
+        return;
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key === "`") {
+        e.preventDefault();
+        applyFormatToRange("`", start, end);
+        return;
+      }
       if ((e.ctrlKey || e.metaKey) && e.key === "h") {
         e.preventDefault();
-        const ta = e.currentTarget;
-        const start = ta.selectionStart;
-        const end = ta.selectionEnd;
-        if (start === end) return;
-        const selected = content.substring(start, end);
-        const before = content.substring(0, start);
-        const after = content.substring(end);
-        if (selected.startsWith("==") && selected.endsWith("==") && selected.length > 4) {
-          const unwrapped = selected.slice(2, -2);
-          onChange(before + unwrapped + after);
-          setTimeout(() => {
-            ta.selectionStart = start;
-            ta.selectionEnd = start + unwrapped.length;
-          }, 0);
-        } else {
-          const wrapped = `==${selected}==`;
-          onChange(before + wrapped + after);
-          setTimeout(() => {
-            ta.selectionStart = start + 2;
-            ta.selectionEnd = end + 2;
-          }, 0);
-        }
+        applyFormatToRange("==", start, end);
+        return;
       }
     },
-    [path, content, onChange],
+    [path, content, onChange, findOpen, closeFindBar, applyFormatToRange],
   );
 
   return (
@@ -310,6 +360,7 @@ export default function Editor({ path, content, initialScrollTop, onChange, onSc
         ref={scrollContainerRef}
         className="flex-1 overflow-y-auto selectable"
         onScroll={() => {
+          setToolbar(null);
           if (!onScrollTop || !scrollContainerRef.current) return;
           clearTimeout(scrollSaveTimer.current);
           scrollSaveTimer.current = setTimeout(() => {
@@ -386,6 +437,12 @@ export default function Editor({ path, content, initialScrollTop, onChange, onSc
               value={content}
               onChange={(e) => onChange(e.target.value)}
               onKeyDown={handleKeyDown}
+              onMouseUp={handleTextareaMouseUp}
+              onSelect={(e) => {
+                if (e.currentTarget.selectionStart === e.currentTarget.selectionEnd)
+                  setToolbar(null);
+              }}
+              onBlur={() => setToolbar(null)}
               spellCheck={false}
               className="w-full outline-none resize-none border-none
                          text-[var(--color-text)] min-h-[calc(100vh-200px)]"
@@ -404,6 +461,49 @@ export default function Editor({ path, content, initialScrollTop, onChange, onSc
         )}
       </div>
       </div>
+
+      {/* Floating format toolbar */}
+      {toolbar && mode === "edit" && (
+        <div
+          style={{
+            position: "fixed",
+            left: toolbar.clientX,
+            top: Math.max(8, toolbar.clientY - 52),
+            transform: "translateX(-50%)",
+            zIndex: 200,
+          }}
+          onMouseDown={(e) => e.preventDefault()}
+          className="flex items-center gap-px px-1 py-1
+                     bg-[var(--color-bg)] rounded-[9px]
+                     shadow-[0_4px_24px_rgba(0,0,0,0.14),0_0_0_1px_var(--color-border)]"
+        >
+          {(
+            [
+              { marker: "**",  icon: <Bold         size={13} strokeWidth={2.5} />, tip: "Bold (Ctrl+B)"            },
+              { marker: "*",   icon: <Italic        size={13} strokeWidth={2.5} />, tip: "Italic (Ctrl+I)"          },
+              { marker: "~~",  icon: <Strikethrough size={13} strokeWidth={2.5} />, tip: "Strikethrough (Ctrl+Shift+S)" },
+              { marker: "`",   icon: <Code          size={13} strokeWidth={2.5} />, tip: "Code (Ctrl+`)"            },
+              { marker: "==",  icon: <Highlighter   size={13} strokeWidth={2.5} />, tip: "Highlight (Ctrl+H)"       },
+            ] as const
+          ).map(({ marker, icon, tip }) => (
+            <button
+              key={marker}
+              title={tip}
+              onClick={() => {
+                applyFormatToRange(marker, toolbar.start, toolbar.end);
+                setToolbar(null);
+              }}
+              className="w-[28px] h-[28px] flex items-center justify-center
+                         rounded-[6px] cursor-pointer border-none
+                         text-[var(--color-text-secondary)]
+                         hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text)]
+                         transition-colors duration-100"
+            >
+              {icon}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Status bar */}
       <div
