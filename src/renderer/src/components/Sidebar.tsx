@@ -8,6 +8,7 @@ import {
   FolderPlus,
   Pencil,
   Trash2,
+  AlertTriangle,
 } from "lucide-react";
 import { FsEntry } from "../types";
 
@@ -319,6 +320,7 @@ export default function Sidebar({
   const [createName, setCreateName] = useState("");
   const [renamingPath, setRenamingPath] = useState<string | null>(null);
   const [renameName, setRenameName] = useState("");
+  const [confirmingDelete, setConfirmingDelete] = useState<string | null>(null);
 
   const toggleFolder = (path: string) => {
     setExpanded((prev) => {
@@ -387,9 +389,15 @@ export default function Sidebar({
     setRenameName("");
   };
 
-  const handleDelete = async (path: string) => {
-    onDeleteProp(path);
-    await window.electronAPI.delete(path);
+  const handleDelete = (path: string) => {
+    setConfirmingDelete(path);
+  };
+
+  const confirmDelete = async () => {
+    if (!confirmingDelete) return;
+    onDeleteProp(confirmingDelete);
+    await window.electronAPI.delete(confirmingDelete);
+    setConfirmingDelete(null);
     await onRefresh();
   };
 
@@ -418,8 +426,72 @@ export default function Sidebar({
       style={width !== undefined ? { width } : undefined}
       className="w-[var(--sidebar-width)] bg-[var(--color-bg-secondary)]
                  border-r border-[var(--color-border)]
-                 flex flex-col overflow-hidden shrink-0 select-none"
+                 flex flex-col overflow-hidden shrink-0 select-none relative"
     >
+      {/* Delete confirmation overlay */}
+      {confirmingDelete && (() => {
+        const name = confirmingDelete
+          .replace(/\\/g, "/")
+          .split("/")
+          .pop()
+          ?.replace(/\.md$/, "") ?? confirmingDelete;
+        return (
+          <div
+            className="absolute inset-0 z-50 flex items-center justify-center
+                       bg-[rgba(0,0,0,0.3)] backdrop-blur-[3px]"
+            onClick={() => setConfirmingDelete(null)}
+          >
+            <div
+              className="mx-3 w-full bg-[var(--color-bg)] rounded-[12px]
+                         shadow-[0_16px_48px_rgba(0,0,0,0.22)]
+                         border border-[var(--color-border)] overflow-hidden"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Red header strip with icon */}
+              <div className="flex items-center gap-2.5 px-4 pt-4 pb-3">
+                <div className="w-8 h-8 rounded-full bg-[rgba(255,59,48,0.12)]
+                                flex items-center justify-center shrink-0">
+                  <AlertTriangle size={15} strokeWidth={2.5}
+                    className="text-[var(--color-error)]" />
+                </div>
+                <div>
+                  <p className="text-[13px] font-semibold text-[var(--color-text)] leading-tight">
+                    Delete &ldquo;{name}&rdquo;?
+                  </p>
+                  <p className="text-[11px] text-[var(--color-text-tertiary)] mt-0.5 leading-tight">
+                    This cannot be undone.
+                  </p>
+                </div>
+              </div>
+              {/* Divider */}
+              <div className="h-px bg-[var(--color-border)] mx-0" />
+              {/* Actions */}
+              <div className="flex px-3 py-2.5 gap-2">
+                <button
+                  className="flex-1 py-1.5 text-[12px] font-medium rounded-[7px]
+                             cursor-pointer bg-transparent
+                             border border-[var(--color-border)]
+                             text-[var(--color-text-secondary)]
+                             hover:bg-[rgba(0,0,0,0.04)] transition-colors duration-100"
+                  onClick={() => setConfirmingDelete(null)}
+                >
+                  Cancel
+                </button>
+                <button
+                  className="flex-1 py-1.5 text-[12px] font-medium rounded-[7px]
+                             cursor-pointer border-none
+                             bg-[var(--color-error)] text-white
+                             hover:opacity-85 active:opacity-75
+                             transition-opacity duration-100"
+                  onClick={confirmDelete}
+                >
+                  Delete
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
       {/* Drag area for title bar alignment */}
       <div className="h-[var(--titlebar-height)] shrink-0 [-webkit-app-region:drag]" />
 
