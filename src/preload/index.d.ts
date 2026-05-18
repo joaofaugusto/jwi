@@ -17,6 +17,7 @@ export interface ElectronAPI {
   createFile: (parentPath: string, name: string) => Promise<string>;
   rename: (oldPath: string, newName: string) => Promise<string>;
   delete: (path: string) => Promise<void>;
+  exportPdf: (title: string, html: string) => Promise<{ saved: boolean }>;
 }
 
 declare global {

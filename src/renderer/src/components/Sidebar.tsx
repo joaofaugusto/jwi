@@ -9,6 +9,8 @@ import {
   Pencil,
   Trash2,
   AlertTriangle,
+  Star,
+  X,
 } from "lucide-react";
 import { FsEntry } from "../types";
 
@@ -47,6 +49,8 @@ interface TreeItemProps {
   onCreateChange: (v: string) => void;
   onCreateConfirm: () => void;
   onCreateCancel: () => void;
+  pinnedPaths: Set<string>;
+  onTogglePin: (path: string) => void;
 }
 
 function InlineInput({
@@ -114,6 +118,8 @@ function TreeItem({
   onCreateChange,
   onCreateConfirm,
   onCreateCancel,
+  pinnedPaths,
+  onTogglePin,
 }: TreeItemProps) {
   const [hovered, setHovered] = useState(false);
   const isExpanded = expanded.has(item.path);
@@ -238,6 +244,21 @@ function TreeItem({
                 <FilePlus size={11} strokeWidth={2} />
               </button>
             )}
+            {!item.isFolder && (
+              <button
+                className="w-[18px] h-[18px] flex items-center justify-center
+                           rounded-[4px] cursor-pointer transition-colors duration-100"
+                style={
+                  pinnedPaths.has(item.path)
+                    ? { color: "var(--color-accent)" }
+                    : { color: "var(--color-text-tertiary)" }
+                }
+                onClick={() => onTogglePin(item.path)}
+                title={pinnedPaths.has(item.path) ? "Unpin" : "Pin"}
+              >
+                <Star size={11} strokeWidth={2} fill={pinnedPaths.has(item.path) ? "currentColor" : "none"} />
+              </button>
+            )}
             <button
               className="w-[18px] h-[18px] flex items-center justify-center
                          rounded-[4px] cursor-pointer
@@ -321,6 +342,26 @@ export default function Sidebar({
   const [renamingPath, setRenamingPath] = useState<string | null>(null);
   const [renameName, setRenameName] = useState("");
   const [confirmingDelete, setConfirmingDelete] = useState<string | null>(null);
+  const [pinnedPaths, setPinnedPaths] = useState<Set<string>>(() => {
+    try {
+      const raw = localStorage.getItem("jwi-pinned");
+      return raw ? new Set(JSON.parse(raw) as string[]) : new Set();
+    } catch { return new Set(); }
+  });
+
+  // Persist pinned paths
+  useEffect(() => {
+    localStorage.setItem("jwi-pinned", JSON.stringify([...pinnedPaths]));
+  }, [pinnedPaths]);
+
+  const togglePin = (path: string) => {
+    setPinnedPaths((prev) => {
+      const next = new Set(prev);
+      if (next.has(path)) next.delete(path);
+      else next.add(path);
+      return next;
+    });
+  };
 
   const toggleFolder = (path: string) => {
     setExpanded((prev) => {
@@ -419,6 +460,8 @@ export default function Sidebar({
     onCreateChange: setCreateName,
     onCreateConfirm: handleCreateConfirm,
     onCreateCancel: handleCreateCancel,
+    pinnedPaths,
+    onTogglePin: togglePin,
   };
 
   return (
@@ -534,6 +577,59 @@ export default function Sidebar({
 
       {/* Tree */}
       <div className="flex-1 overflow-y-auto py-1">
+        {/* ── Pinned section ── */}
+        {(() => {
+          const allEntries = tree.flatMap(flattenTree);
+          const pinned = allEntries.filter((e) => !e.isFolder && pinnedPaths.has(e.path));
+          if (pinned.length === 0) return null;
+          return (
+            <>
+              <div
+                className="px-3 pt-2 pb-1 text-[10px] font-semibold uppercase
+                           tracking-[0.5px] text-[var(--color-text-tertiary)]"
+              >
+                Pinned
+              </div>
+              {pinned.map((entry) => {
+                const isSelected = selectedPath === entry.path;
+                const name = entry.name.replace(/\.md$/, "");
+                return (
+                  <div
+                    key={entry.path}
+                    className={`group flex items-center gap-1 py-[3px] pr-1.5 mx-1 pl-[8px]
+                                rounded-[var(--radius-sm)] cursor-pointer transition-colors duration-100
+                                ${isSelected
+                                  ? "bg-[var(--color-accent-light)] text-[var(--color-accent)]"
+                                  : "text-[var(--color-text-secondary)] hover:bg-[rgba(0,0,0,0.04)] hover:text-[var(--color-text)]"
+                                }`}
+                    onClick={() => onFileSelect(entry.path)}
+                  >
+                    <span className="w-3 shrink-0" />
+                    <Star
+                      size={12}
+                      strokeWidth={2}
+                      fill="currentColor"
+                      className={isSelected ? "shrink-0" : "shrink-0 text-[var(--color-accent)]"}
+                    />
+                    <span className="flex-1 truncate text-[13px] leading-none">{name}</span>
+                    <button
+                      className="w-[18px] h-[18px] items-center justify-center
+                                 rounded-[4px] cursor-pointer shrink-0 hidden group-hover:flex
+                                 text-[var(--color-text-tertiary)] hover:text-[var(--color-accent)]
+                                 transition-colors duration-100"
+                      onClick={(e) => { e.stopPropagation(); togglePin(entry.path); }}
+                      title="Unpin"
+                    >
+                      <X size={10} strokeWidth={2.5} />
+                    </button>
+                  </div>
+                );
+              })}
+              <div className="h-px bg-[var(--color-border)] mx-2 mt-1 mb-2" />
+            </>
+          );
+        })()}
+
         {/* Root-level create input */}
         {creating?.parentPath === vault && (
           <div className="flex items-center gap-1 py-[3px] pr-1.5 mx-1 pl-[8px]">

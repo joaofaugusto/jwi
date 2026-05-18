@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { marked } from "marked";
-import { Eye, Pencil, ChevronUp, ChevronDown, X, Bold, Italic, Strikethrough, Code, Highlighter, Heading1, Heading2, Heading3, List, ListOrdered, Quote, Link as LinkIcon, Image as ImageIcon } from "lucide-react";
+import { Eye, Pencil, ChevronUp, ChevronDown, X, Bold, Italic, Strikethrough, Code, Highlighter, Heading1, Heading2, Heading3, List, ListOrdered, Quote, Link as LinkIcon, Image as ImageIcon, Download } from "lucide-react";
 
 interface Props {
   path: string;
@@ -65,6 +65,56 @@ function isWrappedWith(text: string, open: string, close: string): boolean {
   return true;
 }
 
+// ── Frontmatter ──────────────────────────────────────────────
+
+function parseFrontmatter(raw: string): { tags: string[]; body: string } {
+  const match = raw.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?/);
+  if (!match) return { tags: [], body: raw };
+  const fm = match[1];
+  const tagsMatch = fm.match(/^tags:\s*\[([^\]]*)\]/m);
+  const tags = tagsMatch
+    ? tagsMatch[1]
+        .split(",")
+        .map((t) => t.trim().replace(/^['"]|['"]$/g, ""))
+        .filter(Boolean)
+    : [];
+  return { tags, body: raw.slice(match[0].length) };
+}
+
+function tagHue(tag: string): number {
+  let h = 0;
+  for (let i = 0; i < tag.length; i++) h = ((h * 31) + tag.charCodeAt(i)) & 0xffff;
+  return h % 360;
+}
+
+// ── Export ──────────────────────────────────────────────────
+
+function generateExportHtml(title: string, tags: string[], rendered: string): string {
+  const tagsHtml = tags.length
+    ? `<p style="margin:0 0 1.6em">${tags
+        .map(
+          (t) =>
+            `<span style="display:inline-flex;align-items:center;padding:2px 10px;border-radius:999px;font-size:12px;font-weight:500;margin-right:6px;background:hsl(${tagHue(t)},70%,92%);color:hsl(${tagHue(t)},60%,35%)">${t}</span>`,
+        )
+        .join("")}</p>`
+    : "";
+  return `<!DOCTYPE html><html lang="en"><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>${title}</title><style>
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;font-size:15px;line-height:1.75;color:#1c1c1e;max-width:760px;margin:0 auto;padding:56px 32px}
+h1{font-size:1.9em;font-weight:600;line-height:1.3;margin:0 0 0.3em}h2{font-size:1.5em;font-weight:600;line-height:1.3;margin-top:1.5em;margin-bottom:0.4em}h3{font-size:1.2em;font-weight:600;margin-top:1.5em;margin-bottom:0.4em}h4,h5,h6{font-weight:600;margin-top:1.2em;margin-bottom:0.3em}
+p{margin-bottom:0.9em}a{color:#007aff;text-decoration:none}a:hover{text-decoration:underline}
+code{font-family:"SF Mono",Menlo,Monaco,Consolas,monospace;font-size:13px;background:rgba(0,0,0,0.06);border-radius:4px;padding:1px 5px}
+pre{background:#f5f5f7;border-radius:8px;padding:16px;overflow-x:auto;font-size:13px}pre code{background:none;padding:0}
+blockquote{border-left:3px solid #d1d1d6;margin:0;padding-left:16px;color:#6e6e73}
+ul,ol{padding-left:1.5em;margin-bottom:0.9em}li{margin-bottom:0.25em}
+hr{border:none;border-top:1px solid #e5e5ea;margin:2em 0}
+table{border-collapse:collapse;width:100%;margin-bottom:0.9em}th,td{border:1px solid #e5e5ea;padding:8px 12px;text-align:left}th{background:#f5f5f7;font-weight:600}
+mark{background:rgba(255,214,10,0.4);border-radius:2px}img{max-width:100%;height:auto;border-radius:8px}
+</style></head>
+<body><h1>${title}</h1>${tagsHtml}<div>${rendered}</div></body></html>`;
+}
+
 export default function Editor({ path, content, initialScrollTop, onChange, onScrollTop }: Props) {
   const [mode, setMode] = useState<"edit" | "preview">("edit");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -78,10 +128,13 @@ export default function Editor({ path, content, initialScrollTop, onChange, onSc
   const [findIndex, setFindIndex] = useState(0);
   const findInputRef = useRef<HTMLInputElement>(null);
   const prevFindQuery = useRef("");
+  const exportMenuRef = useRef<HTMLDivElement>(null);
+  const [exportMenuOpen, setExportMenuOpen] = useState(false);
 
   const fileName = path.split(/[/\\]/).pop()?.replace(/\.md$/, "") ?? "";
 
-  const renderedHtml = useMemo(() => renderMarkdown(content), [content]);
+  const { tags, body } = useMemo(() => parseFrontmatter(content), [content]);
+  const renderedHtml = useMemo(() => renderMarkdown(body), [body]);
 
   const matches = useMemo(() => {
     if (!findQuery) return [];
@@ -179,6 +232,34 @@ export default function Editor({ path, content, initialScrollTop, onChange, onSc
     onChange(newContent);
     setTimeout(() => { ta.selectionStart = start + 2; ta.selectionEnd = start + 5; ta.focus(); }, 0);
   }, [content, onChange]);
+
+  // Close export menu on outside click
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (exportMenuRef.current && !exportMenuRef.current.contains(e.target as Node)) {
+        setExportMenuOpen(false);
+      }
+    };
+    if (exportMenuOpen) document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [exportMenuOpen]);
+
+  const handleExportHtml = useCallback(() => {
+    setExportMenuOpen(false);
+    const html = generateExportHtml(fileName || "Untitled", tags, renderMarkdown(body));
+    const blob = new Blob([html], { type: "text/html" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = `${fileName || "note"}.html`;
+    document.body.appendChild(a); a.click();
+    document.body.removeChild(a); URL.revokeObjectURL(url);
+  }, [fileName, tags, body]);
+
+  const handleExportPdf = useCallback(async () => {
+    setExportMenuOpen(false);
+    const html = generateExportHtml(fileName || "Untitled", tags, renderMarkdown(body));
+    await window.electronAPI.exportPdf(fileName || "Untitled", html);
+  }, [fileName, tags, body]);
 
   const handleTextareaMouseUp = useCallback(
     (e: React.MouseEvent<HTMLTextAreaElement>) => {
@@ -496,34 +577,93 @@ export default function Editor({ path, content, initialScrollTop, onChange, onSc
       >
         <div className="max-w-2xl mx-auto w-full px-12 py-10 flex flex-col flex-1">
         {/* Title + toggle */}
-        <div className="flex items-start justify-between mb-6">
+        <div className="flex items-start justify-between mb-1">
           <h1
             className="text-[26px] font-semibold text-[var(--color-text)]
                        leading-tight tracking-[-0.3px]"
           >
             {fileName || "Untitled"}
           </h1>
-          <button
-            onClick={() => setMode((m) => (m === "edit" ? "preview" : "edit"))}
-            className="mt-1 flex items-center gap-1.5 px-2.5 py-1
-                       rounded-[var(--radius-sm)] text-[11px] font-medium
-                       text-[var(--color-text-tertiary)] cursor-pointer
-                       hover:text-[var(--color-text)] hover:bg-[var(--color-bg-tertiary)]
-                       transition-colors select-none"
-          >
-            {mode === "edit" ? (
-              <>
-                <Eye size={12} strokeWidth={2} />
-                Preview
-              </>
-            ) : (
-              <>
-                <Pencil size={12} strokeWidth={2} />
-                Edit
-              </>
-            )}
-          </button>
+          <div className="flex items-center gap-1 mt-1 shrink-0">
+            {/* Export dropdown */}
+            <div className="relative" ref={exportMenuRef}>
+              <button
+                onClick={() => setExportMenuOpen((v) => !v)}
+                className="flex items-center gap-1 px-2 py-1
+                           rounded-[var(--radius-sm)] text-[11px] font-medium
+                           text-[var(--color-text-tertiary)] cursor-pointer
+                           hover:text-[var(--color-text)] hover:bg-[var(--color-bg-tertiary)]
+                           transition-colors select-none"
+              >
+                <Download size={12} strokeWidth={2} />
+                Export
+                <ChevronDown size={10} strokeWidth={2.5} />
+              </button>
+              {exportMenuOpen && (
+                <div
+                  className="absolute right-0 top-full mt-1 z-40 overflow-hidden
+                             bg-[var(--color-bg-primary)] border border-[var(--color-border)]
+                             rounded-[var(--radius-md)] shadow-[var(--shadow-md)] min-w-[136px]"
+                >
+                  <button
+                    onClick={handleExportHtml}
+                    className="w-full px-3 py-2 text-left text-[13px] text-[var(--color-text)]
+                               hover:bg-[var(--color-bg-secondary)] cursor-pointer"
+                  >
+                    Save as HTML
+                  </button>
+                  <div className="h-px bg-[var(--color-border)]" />
+                  <button
+                    onClick={handleExportPdf}
+                    className="w-full px-3 py-2 text-left text-[13px] text-[var(--color-text)]
+                               hover:bg-[var(--color-bg-secondary)] cursor-pointer"
+                  >
+                    Save as PDF
+                  </button>
+                </div>
+              )}
+            </div>
+            {/* Preview / Edit toggle */}
+            <button
+              onClick={() => setMode((m) => (m === "edit" ? "preview" : "edit"))}
+              className="flex items-center gap-1.5 px-2.5 py-1
+                         rounded-[var(--radius-sm)] text-[11px] font-medium
+                         text-[var(--color-text-tertiary)] cursor-pointer
+                         hover:text-[var(--color-text)] hover:bg-[var(--color-bg-tertiary)]
+                         transition-colors select-none"
+            >
+              {mode === "edit" ? (
+                <>
+                  <Eye size={12} strokeWidth={2} />
+                  Preview
+                </>
+              ) : (
+                <>
+                  <Pencil size={12} strokeWidth={2} />
+                  Edit
+                </>
+              )}
+            </button>
+          </div>
         </div>
+
+        {/* Tag pills */}
+        {tags.length > 0 && (
+          <div className="flex flex-wrap gap-1.5 mb-5">
+            {tags.map((tag) => (
+              <span
+                key={tag}
+                className="inline-flex items-center px-2 py-[2px] rounded-full text-[11px] font-medium select-none"
+                style={{
+                  background: `hsl(${tagHue(tag)},70%,91%)`,
+                  color: `hsl(${tagHue(tag)},55%,32%)`,
+                }}
+              >
+                {tag}
+              </span>
+            ))}
+          </div>
+        )}
 
         {/* Edit mode */}
         {mode === "edit" && (

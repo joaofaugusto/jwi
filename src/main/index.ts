@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, Menu } from "electron";
+import { app, BrowserWindow, ipcMain, Menu, dialog } from "electron";
 import {
   existsSync,
   mkdirSync,
@@ -7,8 +7,10 @@ import {
   writeFileSync,
   renameSync,
   rmSync,
+  unlinkSync,
 } from "fs";
 import { join, dirname } from "path";
+import { tmpdir } from "os";
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -132,6 +134,33 @@ ipcMain.handle("fs:rename", (_, oldPath: string, newName: string) => {
 
 ipcMain.handle("fs:delete", (_, path: string) => {
   rmSync(path, { recursive: true, force: true });
+});
+
+// ── Export ────────────────────────────────────────────────────
+ipcMain.handle("export:pdf", async (_, title: string, html: string) => {
+  const { filePath, canceled } = await dialog.showSaveDialog(mainWindow!, {
+    title: "Save PDF",
+    defaultPath: join(app.getPath("documents"), `${title}.pdf`),
+    filters: [{ name: "PDF Document", extensions: ["pdf"] }],
+  });
+  if (canceled || !filePath) return { saved: false };
+
+  const tempPath = join(tmpdir(), `jwi-print-${Date.now()}.html`);
+  writeFileSync(tempPath, html, "utf-8");
+
+  const printWin = new BrowserWindow({
+    show: false,
+    width: 900,
+    height: 1200,
+    webPreferences: { contextIsolation: true, nodeIntegration: false },
+  });
+  await printWin.loadFile(tempPath);
+  await new Promise<void>((r) => setTimeout(r, 400));
+  const pdfBuffer = await printWin.webContents.printToPDF({ pageSize: "A4", printBackground: false });
+  writeFileSync(filePath, pdfBuffer);
+  printWin.destroy();
+  try { unlinkSync(tempPath); } catch { /* ignore */ }
+  return { saved: true };
 });
 
 // ── App lifecycle ─────────────────────────────────────────────

@@ -21,4 +21,6 @@ contextBridge.exposeInMainWorld("electronAPI", {
   rename: (oldPath: string, newName: string) =>
     ipcRenderer.invoke("fs:rename", oldPath, newName),
   delete: (path: string) => ipcRenderer.invoke("fs:delete", path),
+  exportPdf: (title: string, html: string) =>
+    ipcRenderer.invoke("export:pdf", title, html),
 });
