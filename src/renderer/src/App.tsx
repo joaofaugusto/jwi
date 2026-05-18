@@ -3,6 +3,7 @@ import TitleBar from "./components/TitleBar";
 import Sidebar from "./components/Sidebar";
 import Editor from "./components/Editor";
 import EmptyState from "./components/EmptyState";
+import SearchPalette from "./components/SearchPalette";
 import { FsEntry } from "./types";
 
 export default function App() {
@@ -11,6 +12,7 @@ export default function App() {
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [content, setContent] = useState("");
   const [isDirty, setIsDirty] = useState(false);
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
 
   // Load vault on mount
   useEffect(() => {
@@ -63,6 +65,18 @@ export default function App() {
     [selectedPath],
   );
 
+  // Global Ctrl/Cmd+K — open search palette
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === "k") {
+        e.preventDefault();
+        setIsSearchOpen((v) => !v);
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, []);
+
   const handleNewNote = useCallback(async () => {
     if (!vault) return;
     const path = await window.electronAPI.createFile(vault, "Untitled");
@@ -77,6 +91,13 @@ export default function App() {
   return (
     <div className="flex flex-col h-full">
       <TitleBar subtitle={fileName} isDirty={isDirty} />
+      {isSearchOpen && (
+        <SearchPalette
+          tree={tree}
+          onSelect={openFile}
+          onClose={() => setIsSearchOpen(false)}
+        />
+      )}
       <div className="flex flex-1 min-h-0">
         {vault && (
           <Sidebar
