@@ -5,7 +5,9 @@ import { Eye, Pencil, ChevronUp, ChevronDown, X } from "lucide-react";
 interface Props {
   path: string;
   content: string;
+  initialScrollTop?: number;
   onChange: (content: string) => void;
+  onScrollTop?: (pos: number) => void;
 }
 
 marked.use({ breaks: true });
@@ -45,9 +47,11 @@ const TEXT_STYLE: React.CSSProperties = {
   wordBreak: "break-word",
 };
 
-export default function Editor({ path, content, onChange }: Props) {
+export default function Editor({ path, content, initialScrollTop, onChange, onScrollTop }: Props) {
   const [mode, setMode] = useState<"edit" | "preview">("edit");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const scrollSaveTimer = useRef<ReturnType<typeof setTimeout>>();
 
   // Find & Replace
   const [findOpen, setFindOpen] = useState(false);
@@ -89,6 +93,14 @@ export default function Editor({ path, content, onChange }: Props) {
       setTimeout(() => textareaRef.current?.focus(), 0);
     }
   }, [mode]);
+
+  // Restore scroll position on mount
+  useEffect(() => {
+    if (initialScrollTop && scrollContainerRef.current) {
+      scrollContainerRef.current.scrollTop = initialScrollTop;
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Global Ctrl+F — open find bar
   useEffect(() => {
@@ -294,7 +306,17 @@ export default function Editor({ path, content, onChange }: Props) {
           </div>
         </div>
       )}
-      <div className="flex-1 overflow-y-auto selectable">
+      <div
+        ref={scrollContainerRef}
+        className="flex-1 overflow-y-auto selectable"
+        onScroll={() => {
+          if (!onScrollTop || !scrollContainerRef.current) return;
+          clearTimeout(scrollSaveTimer.current);
+          scrollSaveTimer.current = setTimeout(() => {
+            onScrollTop(scrollContainerRef.current?.scrollTop ?? 0);
+          }, 150);
+        }}
+      >
         <div className="max-w-2xl mx-auto w-full px-12 py-10 flex flex-col flex-1">
         {/* Title + toggle */}
         <div className="flex items-start justify-between mb-6">

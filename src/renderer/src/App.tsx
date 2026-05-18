@@ -4,17 +4,26 @@ import Sidebar from "./components/Sidebar";
 import Editor from "./components/Editor";
 import EmptyState from "./components/EmptyState";
 import SearchPalette from "./components/SearchPalette";
+import TabBar from "./components/TabBar";
 import { FsEntry } from "./types";
+
+interface Tab {
+  path: string;
+  content: string;
+  isDirty: boolean;
+  scrollTop: number;
+}
 
 export default function App() {
   const [vault, setVault] = useState<string | null>(null);
   const [tree, setTree] = useState<FsEntry[]>([]);
-  const [selectedPath, setSelectedPath] = useState<string | null>(null);
-  const [content, setContent] = useState("");
-  const [isDirty, setIsDirty] = useState(false);
+  const [tabs, setTabs] = useState<Tab[]>([]);
+  const [activeTabIdx, setActiveTabIdx] = useState(0);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [sidebarWidth, setSidebarWidth] = useState(240);
   const isResizing = useRef(false);
+
+  const activeTab = tabs[activeTabIdx] ?? null;
 
   const handleResizeMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
@@ -49,13 +58,16 @@ export default function App() {
 
   // Auto-save with debounce
   useEffect(() => {
-    if (!selectedPath || !isDirty) return;
+    if (!activeTab?.isDirty) return;
+    const { path, content } = activeTab;
     const timer = setTimeout(async () => {
-      await window.electronAPI.writeFile(selectedPath, content);
-      setIsDirty(false);
+      await window.electronAPI.writeFile(path, content);
+      setTabs((prev) =>
+        prev.map((t, i) => (i === activeTabIdx ? { ...t, isDirty: false } : t)),
+      );
     }, 800);
     return () => clearTimeout(timer);
-  }, [content, isDirty, selectedPath]);
+  }, [activeTab?.content, activeTab?.isDirty, activeTab?.path, activeTabIdx]);
 
   const refreshTree = useCallback(async () => {
     if (!vault) return;
@@ -64,30 +76,69 @@ export default function App() {
 
   const openFile = useCallback(
     async (path: string) => {
-      if (isDirty && selectedPath) {
-        await window.electronAPI.writeFile(selectedPath, content);
-        setIsDirty(false);
+      const existingIdx = tabs.findIndex((t) => t.path === path);
+      if (existingIdx !== -1) {
+        setActiveTabIdx(existingIdx);
+        return;
+      }
+      if (activeTab?.isDirty) {
+        await window.electronAPI.writeFile(activeTab.path, activeTab.content);
       }
       const c = await window.electronAPI.readFile(path);
-      setSelectedPath(path);
-      setContent(c);
+      const newIdx = tabs.length;
+      setTabs((prev) => [...prev, { path, content: c, isDirty: false, scrollTop: 0 }]);
+      setActiveTabIdx(newIdx);
     },
-    [isDirty, selectedPath, content],
+    [tabs, activeTab],
+  );
+
+  const handleTabClose = useCallback(
+    async (idx: number) => {
+      const tab = tabs[idx];
+      if (!tab) return;
+      if (tab.isDirty) {
+        await window.electronAPI.writeFile(tab.path, tab.content);
+      }
+      const newTabs = tabs.filter((_, i) => i !== idx);
+      setTabs(newTabs);
+      setActiveTabIdx((prev) => {
+        if (newTabs.length === 0) return 0;
+        if (prev === idx) return Math.max(0, idx - 1);
+        return prev > idx ? prev - 1 : prev;
+      });
+    },
+    [tabs],
   );
 
   const handleDelete = useCallback(
-    (path: string) => {
-      if (
-        selectedPath === path ||
-        selectedPath?.startsWith(path + "/") ||
-        selectedPath?.startsWith(path + "\\")
-      ) {
-        setSelectedPath(null);
-        setContent("");
-        setIsDirty(false);
-      }
+    (deletedPath: string) => {
+      const isAffected = (p: string) =>
+        p === deletedPath ||
+        p.startsWith(deletedPath + "/") ||
+        p.startsWith(deletedPath + "\\");
+      const newTabs = tabs.filter((t) => !isAffected(t.path));
+      setTabs(newTabs);
+      setActiveTabIdx((prev) => Math.max(0, Math.min(prev, newTabs.length - 1)));
     },
-    [selectedPath],
+    [tabs],
+  );
+
+  const handleContentChange = useCallback(
+    (c: string) => {
+      setTabs((prev) =>
+        prev.map((t, i) => (i === activeTabIdx ? { ...t, content: c, isDirty: true } : t)),
+      );
+    },
+    [activeTabIdx],
+  );
+
+  const handleScrollTop = useCallback(
+    (scrollTop: number) => {
+      setTabs((prev) =>
+        prev.map((t, i) => (i === activeTabIdx ? { ...t, scrollTop } : t)),
+      );
+    },
+    [activeTabIdx],
   );
 
   // Global Ctrl/Cmd+K — open search palette
@@ -102,6 +153,18 @@ export default function App() {
     return () => window.removeEventListener("keydown", handler);
   }, []);
 
+  // Ctrl/Cmd+W — close active tab
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === "w") {
+        e.preventDefault();
+        if (tabs.length > 0) handleTabClose(activeTabIdx);
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [tabs, activeTabIdx, handleTabClose]);
+
   const handleNewNote = useCallback(async () => {
     if (!vault) return;
     const path = await window.electronAPI.createFile(vault, "Untitled");
@@ -109,13 +172,11 @@ export default function App() {
     await openFile(path);
   }, [vault, refreshTree, openFile]);
 
-  const fileName = selectedPath
-    ? selectedPath.split(/[/\\]/).pop()?.replace(/\.md$/, "")
-    : undefined;
+  const fileName = activeTab?.path.split(/[/\\]/).pop()?.replace(/\.md$/, "");
 
   return (
     <div className="flex flex-col h-full">
-      <TitleBar subtitle={fileName} isDirty={isDirty} onSearch={() => setIsSearchOpen(true)} />
+      <TitleBar subtitle={fileName} isDirty={activeTab?.isDirty} onSearch={() => setIsSearchOpen(true)} />
       {isSearchOpen && (
         <SearchPalette
           tree={tree}
@@ -129,7 +190,7 @@ export default function App() {
             <Sidebar
               tree={tree}
               vault={vault}
-              selectedPath={selectedPath}
+              selectedPath={activeTab?.path ?? null}
               onFileSelect={openFile}
               onRefresh={refreshTree}
               onDelete={handleDelete}
@@ -144,16 +205,23 @@ export default function App() {
             />
           </>
         )}
-        <div className="flex-1 min-w-0 flex">
-          {selectedPath ? (
+        <div className="flex-1 min-w-0 flex flex-col min-h-0">
+          {tabs.length > 0 && (
+            <TabBar
+              tabs={tabs}
+              activeIdx={activeTabIdx}
+              onSwitch={setActiveTabIdx}
+              onClose={handleTabClose}
+            />
+          )}
+          {activeTab ? (
             <Editor
-              key={selectedPath}
-              path={selectedPath}
-              content={content}
-              onChange={(c) => {
-                setContent(c);
-                setIsDirty(true);
-              }}
+              key={activeTab.path}
+              path={activeTab.path}
+              content={activeTab.content}
+              initialScrollTop={activeTab.scrollTop}
+              onChange={handleContentChange}
+              onScrollTop={handleScrollTop}
             />
           ) : (
             <EmptyState onNewNote={handleNewNote} />
