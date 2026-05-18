@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { marked } from "marked";
-import { Eye, Pencil } from "lucide-react";
+import { Eye, Pencil, ChevronUp, ChevronDown, X } from "lucide-react";
 
 interface Props {
   path: string;
@@ -28,9 +28,32 @@ export default function Editor({ path, content, onChange }: Props) {
   const [mode, setMode] = useState<"edit" | "preview">("edit");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
+  // Find & Replace
+  const [findOpen, setFindOpen] = useState(false);
+  const [findQuery, setFindQuery] = useState("");
+  const [replaceQuery, setReplaceQuery] = useState("");
+  const [findIndex, setFindIndex] = useState(0);
+  const findInputRef = useRef<HTMLInputElement>(null);
+  const prevFindQuery = useRef("");
+
   const fileName = path.split(/[/\\]/).pop()?.replace(/\.md$/, "") ?? "";
 
   const renderedHtml = useMemo(() => renderMarkdown(content), [content]);
+
+  const matches = useMemo(() => {
+    if (!findQuery) return [];
+    const results: Array<{ start: number; end: number }> = [];
+    const q = findQuery.toLowerCase();
+    const c = content.toLowerCase();
+    let pos = 0;
+    while (pos < c.length) {
+      const idx = c.indexOf(q, pos);
+      if (idx === -1) break;
+      results.push({ start: idx, end: idx + findQuery.length });
+      pos = idx + 1;
+    }
+    return results;
+  }, [content, findQuery]);
 
   const wordCount = useMemo(() => {
     const stripped = content.replace(/==|\*\*|\*|~~|`+|#+\s|>\s/g, " ");
@@ -46,12 +69,88 @@ export default function Editor({ path, content, onChange }: Props) {
     }
   }, [mode]);
 
+  // Global Ctrl+F — open find bar
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === "f") {
+        e.preventDefault();
+        setFindOpen(true);
+        if (mode === "preview") setMode("edit");
+        setTimeout(() => findInputRef.current?.focus(), 0);
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [mode]);
+
+  // Auto-navigate when query changes
+  useEffect(() => {
+    if (findQuery === prevFindQuery.current) return;
+    prevFindQuery.current = findQuery;
+    setFindIndex(0);
+    if (matches.length > 0) {
+      setTimeout(() => {
+        textareaRef.current?.setSelectionRange(matches[0].start, matches[0].end);
+      }, 0);
+    }
+  }, [findQuery, matches]);
+
+  const navigateTo = useCallback(
+    (index: number) => {
+      const m = matches[index];
+      if (!m) return;
+      setFindIndex(index);
+      textareaRef.current?.setSelectionRange(m.start, m.end);
+    },
+    [matches],
+  );
+
+  const goNext = useCallback(() => {
+    if (!matches.length) return;
+    navigateTo((findIndex + 1) % matches.length);
+  }, [findIndex, matches, navigateTo]);
+
+  const goPrev = useCallback(() => {
+    if (!matches.length) return;
+    navigateTo((findIndex - 1 + matches.length) % matches.length);
+  }, [findIndex, matches, navigateTo]);
+
+  const handleReplace = useCallback(() => {
+    const m = matches[findIndex];
+    if (!m) return;
+    const next = content.substring(0, m.start) + replaceQuery + content.substring(m.end);
+    onChange(next);
+    const nextIdx = findIndex < matches.length - 1 ? findIndex : Math.max(0, findIndex - 1);
+    setTimeout(() => setFindIndex(nextIdx), 0);
+  }, [matches, findIndex, replaceQuery, content, onChange]);
+
+  const handleReplaceAll = useCallback(() => {
+    if (!findQuery) return;
+    const escaped = findQuery.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    onChange(content.replace(new RegExp(escaped, "gi"), replaceQuery));
+    setFindIndex(0);
+  }, [findQuery, replaceQuery, content, onChange]);
+
+  const closeFindBar = useCallback(() => {
+    setFindOpen(false);
+    setFindQuery("");
+    setReplaceQuery("");
+    setTimeout(() => textareaRef.current?.focus(), 0);
+  }, []);
+
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
       // Cmd/Ctrl+S — force save
       if ((e.ctrlKey || e.metaKey) && e.key === "s") {
         e.preventDefault();
         window.electronAPI.writeFile(path, content);
+        return;
+      }
+
+      // Escape — close find bar if open
+      if (e.key === "Escape" && findOpen) {
+        e.preventDefault();
+        closeFindBar();
         return;
       }
 
@@ -101,7 +200,86 @@ export default function Editor({ path, content, onChange }: Props) {
 
   return (
     <div className="flex-1 flex flex-col min-h-0">
-      {/* Scrollable content */}
+      {/* Find & Replace bar */}
+      {findOpen && (
+        <div
+          className="shrink-0 border-b border-[var(--color-border)]
+                     bg-[var(--color-bg-secondary)] px-4 py-2.5 flex flex-col gap-2"
+        >
+          {/* Find row */}
+          <div className="flex items-center gap-2">
+            <input
+              ref={findInputRef}
+              value={findQuery}
+              onChange={(e) => setFindQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") { e.shiftKey ? goPrev() : goNext(); }
+                if (e.key === "Escape") closeFindBar();
+              }}
+              placeholder="Find…"
+              spellCheck={false}
+              className="flex-1 h-[26px] px-2 rounded-[var(--radius-sm)]
+                         bg-[var(--color-bg-primary)] border border-[var(--color-border)]
+                         text-[12px] text-[var(--color-text)] outline-none
+                         focus:border-[var(--color-accent)]
+                         placeholder:text-[var(--color-text-tertiary)]"
+            />
+            <span className="text-[11px] text-[var(--color-text-tertiary)] w-[46px] text-center shrink-0">
+              {matches.length > 0 ? `${findIndex + 1} / ${matches.length}` : findQuery ? "0 / 0" : ""}
+            </span>
+            <button onClick={goPrev} disabled={!matches.length}
+              className="w-[22px] h-[22px] flex items-center justify-center rounded-[4px]
+                         text-[var(--color-text-secondary)] disabled:opacity-30
+                         hover:bg-[var(--color-bg-tertiary)] cursor-pointer transition-colors">
+              <ChevronUp size={13} strokeWidth={2.5} />
+            </button>
+            <button onClick={goNext} disabled={!matches.length}
+              className="w-[22px] h-[22px] flex items-center justify-center rounded-[4px]
+                         text-[var(--color-text-secondary)] disabled:opacity-30
+                         hover:bg-[var(--color-bg-tertiary)] cursor-pointer transition-colors">
+              <ChevronDown size={13} strokeWidth={2.5} />
+            </button>
+            <button onClick={closeFindBar}
+              className="w-[22px] h-[22px] flex items-center justify-center rounded-[4px]
+                         text-[var(--color-text-tertiary)]
+                         hover:bg-[var(--color-bg-tertiary)] cursor-pointer transition-colors">
+              <X size={13} strokeWidth={2.5} />
+            </button>
+          </div>
+          {/* Replace row */}
+          <div className="flex items-center gap-2">
+            <input
+              value={replaceQuery}
+              onChange={(e) => setReplaceQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") handleReplace();
+                if (e.key === "Escape") closeFindBar();
+              }}
+              placeholder="Replace…"
+              spellCheck={false}
+              className="flex-1 h-[26px] px-2 rounded-[var(--radius-sm)]
+                         bg-[var(--color-bg-primary)] border border-[var(--color-border)]
+                         text-[12px] text-[var(--color-text)] outline-none
+                         focus:border-[var(--color-accent)]
+                         placeholder:text-[var(--color-text-tertiary)]"
+            />
+            <button onClick={handleReplace} disabled={!matches.length}
+              className="h-[22px] px-2.5 rounded-[4px] text-[11px] font-medium
+                         text-[var(--color-text-secondary)] disabled:opacity-30
+                         border border-[var(--color-border)]
+                         hover:bg-[var(--color-bg-tertiary)] cursor-pointer transition-colors">
+              Replace
+            </button>
+            <button onClick={handleReplaceAll} disabled={!findQuery}
+              className="h-[22px] px-2.5 rounded-[4px] text-[11px] font-medium
+                         text-[var(--color-text-secondary)] disabled:opacity-30
+                         border border-[var(--color-border)]
+                         hover:bg-[var(--color-bg-tertiary)] cursor-pointer transition-colors">
+              All
+            </button>
+          </div>
+        </div>
+      )}
       <div className="flex-1 overflow-y-auto selectable">
         <div className="max-w-2xl mx-auto w-full px-12 py-10 flex flex-col flex-1">
         {/* Title + toggle */}
