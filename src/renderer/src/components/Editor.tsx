@@ -10,6 +10,27 @@ interface Props {
 
 marked.use({ breaks: true });
 
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+function buildHighlightHtml(
+  content: string,
+  matches: Array<{ start: number; end: number }>,
+  currentIdx: number,
+): string {
+  let result = "";
+  let last = 0;
+  for (let i = 0; i < matches.length; i++) {
+    const { start, end } = matches[i];
+    result += escapeHtml(content.slice(last, start));
+    const bg = i === currentIdx ? "rgba(255,149,0,0.6)" : "rgba(255,214,10,0.45)";
+    result += `<mark style="background:${bg};border-radius:2px;color:transparent">${escapeHtml(content.slice(start, end))}</mark>`;
+    last = end;
+  }
+  return result + escapeHtml(content.slice(last));
+}
+
 function renderMarkdown(md: string): string {
   // Pre-process ==highlight== → <mark> before passing to marked
   const pre = md.replace(/==(.*?)==/gs, (_, t) => `<mark>${t}</mark>`);
@@ -83,24 +104,17 @@ export default function Editor({ path, content, onChange }: Props) {
     return () => window.removeEventListener("keydown", handler);
   }, [mode]);
 
-  // Auto-navigate when query changes
+  // Reset to first match when query changes
   useEffect(() => {
     if (findQuery === prevFindQuery.current) return;
     prevFindQuery.current = findQuery;
     setFindIndex(0);
-    if (matches.length > 0) {
-      setTimeout(() => {
-        textareaRef.current?.setSelectionRange(matches[0].start, matches[0].end);
-      }, 0);
-    }
-  }, [findQuery, matches]);
+  }, [findQuery]);
 
   const navigateTo = useCallback(
     (index: number) => {
-      const m = matches[index];
-      if (!m) return;
+      if (!matches[index]) return;
       setFindIndex(index);
-      textareaRef.current?.setSelectionRange(m.start, m.end);
     },
     [matches],
   );
@@ -324,15 +338,36 @@ export default function Editor({ path, content, onChange }: Props) {
                 Start writing…
               </span>
             )}
+            {/* Match highlight overlay */}
+            {findOpen && matches.length > 0 && (
+              <div
+                aria-hidden="true"
+                className="absolute inset-0 pointer-events-none overflow-hidden"
+                style={{
+                  fontFamily: "var(--font)",
+                  fontSize: "15px",
+                  lineHeight: "1.75",
+                  wordBreak: "break-word",
+                  whiteSpace: "pre-wrap",
+                  overflowWrap: "break-word",
+                  color: "transparent",
+                  padding: 0,
+                  minHeight: "calc(100vh - 200px)",
+                }}
+                dangerouslySetInnerHTML={{
+                  __html: buildHighlightHtml(content, matches, findIndex),
+                }}
+              />
+            )}
             <textarea
               ref={textareaRef}
               value={content}
               onChange={(e) => onChange(e.target.value)}
               onKeyDown={handleKeyDown}
               spellCheck={false}
-              className="w-full outline-none resize-none bg-transparent border-none
+              className="w-full outline-none resize-none border-none
                          text-[var(--color-text)] min-h-[calc(100vh-200px)]"
-              style={TEXT_STYLE}
+              style={{ ...TEXT_STYLE, padding: 0, background: "transparent" }}
             />
           </div>
         )}
