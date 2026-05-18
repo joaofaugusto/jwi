@@ -14,6 +14,12 @@ interface Tab {
   scrollTop: number;
 }
 
+function flattenFilePaths(entries: FsEntry[]): string[] {
+  return entries.flatMap((e) =>
+    e.isFolder ? flattenFilePaths(e.children ?? []) : [e.path],
+  );
+}
+
 export default function App() {
   const [vault, setVault] = useState<string | null>(null);
   const [tree, setTree] = useState<FsEntry[]>([]);
@@ -48,11 +54,40 @@ export default function App() {
     window.addEventListener("mouseup", onMouseUp);
   }, []);
 
-  // Load vault on mount
+  // Load vault on mount, then restore saved session
   useEffect(() => {
     window.electronAPI.getVault().then(async (v) => {
       setVault(v);
-      setTree(await window.electronAPI.readTree(v));
+      const treeData = await window.electronAPI.readTree(v);
+      setTree(treeData);
+
+      try {
+        const raw = localStorage.getItem("jwi-session");
+        if (raw) {
+          const saved = JSON.parse(raw) as {
+            tabs: { path: string; scrollTop: number }[];
+            activeTabIdx: number;
+          };
+          const validPaths = new Set(flattenFilePaths(treeData));
+          const validSaved = saved.tabs.filter((t) => validPaths.has(t.path));
+          if (validSaved.length > 0) {
+            const restoredTabs = await Promise.all(
+              validSaved.map(async (t) => ({
+                path: t.path,
+                content: await window.electronAPI.readFile(t.path),
+                isDirty: false,
+                scrollTop: t.scrollTop,
+              })),
+            );
+            setTabs(restoredTabs);
+            setActiveTabIdx(
+              Math.max(0, Math.min(saved.activeTabIdx, restoredTabs.length - 1)),
+            );
+          }
+        }
+      } catch {
+        // ignore corrupt session data
+      }
     });
   }, []);
 
@@ -68,6 +103,21 @@ export default function App() {
     }, 800);
     return () => clearTimeout(timer);
   }, [activeTab?.content, activeTab?.isDirty, activeTab?.path, activeTabIdx]);
+
+  // Persist session
+  useEffect(() => {
+    if (tabs.length === 0) {
+      localStorage.removeItem("jwi-session");
+      return;
+    }
+    localStorage.setItem(
+      "jwi-session",
+      JSON.stringify({
+        tabs: tabs.map((t) => ({ path: t.path, scrollTop: t.scrollTop })),
+        activeTabIdx,
+      }),
+    );
+  }, [tabs, activeTabIdx]);
 
   const refreshTree = useCallback(async () => {
     if (!vault) return;

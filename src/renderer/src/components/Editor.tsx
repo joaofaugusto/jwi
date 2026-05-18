@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { marked } from "marked";
-import { Eye, Pencil, ChevronUp, ChevronDown, X, Bold, Italic, Strikethrough, Code, Highlighter } from "lucide-react";
+import { Eye, Pencil, ChevronUp, ChevronDown, X, Bold, Italic, Strikethrough, Code, Highlighter, Heading1, Heading2, Heading3, List, ListOrdered, Quote, Link as LinkIcon, Image as ImageIcon } from "lucide-react";
 
 interface Props {
   path: string;
@@ -126,6 +126,59 @@ export default function Editor({ path, content, initialScrollTop, onChange, onSc
     },
     [content, onChange],
   );
+
+  const applyLineFormat = useCallback(
+    (prefix: string) => {
+      const ta = textareaRef.current;
+      if (!ta) return;
+      const cursor = ta.selectionStart;
+      const lineStart = content.lastIndexOf("\n", cursor - 1) + 1;
+      const lineEnd = content.indexOf("\n", cursor);
+      const end = lineEnd === -1 ? content.length : lineEnd;
+      const line = content.slice(lineStart, end);
+      // Detect any existing heading/list/blockquote prefix to strip
+      const existing = line.match(/^(#{1,3} |[-*] |> |\d+\. )/);
+      let newLine: string;
+      if (existing && existing[0] === prefix) {
+        newLine = line.slice(existing[0].length);
+      } else if (existing) {
+        newLine = prefix + line.slice(existing[0].length);
+      } else {
+        newLine = prefix + line;
+      }
+      const newContent = content.slice(0, lineStart) + newLine + content.slice(end);
+      onChange(newContent);
+      setTimeout(() => {
+        ta.selectionStart = lineStart + prefix.length;
+        ta.selectionEnd = lineStart + prefix.length;
+        ta.focus();
+      }, 0);
+    },
+    [content, onChange],
+  );
+
+  const insertLink = useCallback(() => {
+    const ta = textareaRef.current;
+    if (!ta) return;
+    const start = ta.selectionStart;
+    const end = ta.selectionEnd;
+    const selected = content.slice(start, end) || "text";
+    const inserted = `[${selected}](url)`;
+    const newContent = content.slice(0, start) + inserted + content.slice(end);
+    onChange(newContent);
+    const urlStart = start + selected.length + 3;
+    setTimeout(() => { ta.selectionStart = urlStart; ta.selectionEnd = urlStart + 3; ta.focus(); }, 0);
+  }, [content, onChange]);
+
+  const insertImage = useCallback(() => {
+    const ta = textareaRef.current;
+    if (!ta) return;
+    const start = ta.selectionStart;
+    const inserted = `![alt](url)`;
+    const newContent = content.slice(0, start) + inserted + content.slice(start);
+    onChange(newContent);
+    setTimeout(() => { ta.selectionStart = start + 2; ta.selectionEnd = start + 5; ta.focus(); }, 0);
+  }, [content, onChange]);
 
   const handleTextareaMouseUp = useCallback(
     (e: React.MouseEvent<HTMLTextAreaElement>) => {
@@ -354,6 +407,79 @@ export default function Editor({ path, content, initialScrollTop, onChange, onSc
               All
             </button>
           </div>
+        </div>
+      )}
+      {mode === "edit" && (
+        <div
+          className="shrink-0 border-b border-[var(--color-border)] bg-[var(--color-bg-secondary)]
+                     px-2 py-1 flex items-center gap-0.5 overflow-x-auto"
+          style={{ scrollbarWidth: "none" }}
+          onMouseDown={(e) => e.preventDefault()}
+        >
+          {/* Headings */}
+          {([
+            { icon: Heading1, prefix: "# " },
+            { icon: Heading2, prefix: "## " },
+            { icon: Heading3, prefix: "### " },
+          ] as const).map(({ icon: Icon, prefix }) => (
+            <button key={prefix} onClick={() => applyLineFormat(prefix)}
+              title={`Heading ${prefix.trim().length}`}
+              className="h-[24px] w-[28px] flex items-center justify-center rounded-[4px]
+                         text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)]
+                         hover:text-[var(--color-text)] cursor-pointer transition-colors border-none bg-transparent">
+              <Icon size={13} strokeWidth={2} />
+            </button>
+          ))}
+          <div className="w-px h-[14px] bg-[var(--color-border)] mx-0.5 shrink-0" />
+          {/* Inline */}
+          {([
+            { icon: Bold, marker: "**" },
+            { icon: Italic, marker: "*" },
+            { icon: Strikethrough, marker: "~~" },
+            { icon: Code, marker: "`" },
+            { icon: Highlighter, marker: "==" },
+          ] as const).map(({ icon: Icon, marker }) => (
+            <button key={marker} onClick={() => {
+              const ta = textareaRef.current;
+              if (!ta) return;
+              applyFormatToRange(marker, ta.selectionStart, ta.selectionEnd);
+            }}
+              title={marker}
+              className="h-[24px] w-[28px] flex items-center justify-center rounded-[4px]
+                         text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)]
+                         hover:text-[var(--color-text)] cursor-pointer transition-colors border-none bg-transparent">
+              <Icon size={13} strokeWidth={2} />
+            </button>
+          ))}
+          <div className="w-px h-[14px] bg-[var(--color-border)] mx-0.5 shrink-0" />
+          {/* Block */}
+          {([
+            { icon: List, prefix: "- " },
+            { icon: ListOrdered, prefix: "1. " },
+            { icon: Quote, prefix: "> " },
+          ] as const).map(({ icon: Icon, prefix }) => (
+            <button key={prefix} onClick={() => applyLineFormat(prefix)}
+              title={prefix.trim()}
+              className="h-[24px] w-[28px] flex items-center justify-center rounded-[4px]
+                         text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)]
+                         hover:text-[var(--color-text)] cursor-pointer transition-colors border-none bg-transparent">
+              <Icon size={13} strokeWidth={2} />
+            </button>
+          ))}
+          <div className="w-px h-[14px] bg-[var(--color-border)] mx-0.5 shrink-0" />
+          {/* Link / Image */}
+          <button onClick={insertLink} title="Insert link"
+            className="h-[24px] w-[28px] flex items-center justify-center rounded-[4px]
+                       text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)]
+                       hover:text-[var(--color-text)] cursor-pointer transition-colors border-none bg-transparent">
+            <LinkIcon size={13} strokeWidth={2} />
+          </button>
+          <button onClick={insertImage} title="Insert image"
+            className="h-[24px] w-[28px] flex items-center justify-center rounded-[4px]
+                       text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)]
+                       hover:text-[var(--color-text)] cursor-pointer transition-colors border-none bg-transparent">
+            <ImageIcon size={13} strokeWidth={2} />
+          </button>
         </div>
       )}
       <div
