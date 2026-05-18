@@ -125,22 +125,24 @@ export default function App() {
       )}
       <div className="flex flex-1 min-h-0">
         {vault && (
-          <Sidebar
-            tree={tree}
-            vault={vault}
-            selectedPath={selectedPath}
-            onFileSelect={openFile}
-            onRefresh={refreshTree}
-            onDelete={handleDelete}
-            width={sidebarWidth}
-          />
-          {/* Drag handle */}
-          <div
-            onMouseDown={handleResizeMouseDown}
-            className="w-[4px] shrink-0 cursor-col-resize
-                       hover:bg-[var(--color-accent)] transition-colors
-                       [-webkit-app-region:no-drag]"
-          />
+          <>
+            <Sidebar
+              tree={tree}
+              vault={vault}
+              selectedPath={selectedPath}
+              onFileSelect={openFile}
+              onRefresh={refreshTree}
+              onDelete={handleDelete}
+              width={sidebarWidth}
+            />
+            {/* Drag handle */}
+            <div
+              onMouseDown={handleResizeMouseDown}
+              className="w-[4px] shrink-0 cursor-col-resize
+                         hover:bg-[var(--color-accent)] transition-colors
+                         [-webkit-app-region:no-drag]"
+            />
+          </>
         )}
         <div className="flex-1 min-w-0 flex">
           {selectedPath ? (
