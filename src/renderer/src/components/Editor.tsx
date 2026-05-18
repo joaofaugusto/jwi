@@ -32,6 +32,13 @@ export default function Editor({ path, content, onChange }: Props) {
 
   const renderedHtml = useMemo(() => renderMarkdown(content), [content]);
 
+  const wordCount = useMemo(() => {
+    const stripped = content.replace(/==|\*\*|\*|~~|`+|#+\s|>\s/g, " ");
+    return stripped.trim() ? stripped.trim().split(/\s+/).length : 0;
+  }, [content]);
+
+  const charCount = content.length;
+
   // Focus textarea when switching to edit mode
   useEffect(() => {
     if (mode === "edit") {
@@ -93,8 +100,10 @@ export default function Editor({ path, content, onChange }: Props) {
   );
 
   return (
-    <div className="flex-1 overflow-y-auto selectable flex flex-col">
-      <div className="max-w-2xl mx-auto w-full px-12 py-10 flex flex-col flex-1">
+    <div className="flex-1 flex flex-col min-h-0">
+      {/* Scrollable content */}
+      <div className="flex-1 overflow-y-auto selectable">
+        <div className="max-w-2xl mx-auto w-full px-12 py-10 flex flex-col flex-1">
         {/* Title + toggle */}
         <div className="flex items-start justify-between mb-6">
           <h1
@@ -158,6 +167,18 @@ export default function Editor({ path, content, onChange }: Props) {
             onClick={() => setMode("edit")}
           />
         )}
+      </div>
+      </div>
+
+      {/* Status bar */}
+      <div
+        className="shrink-0 border-t border-[var(--color-border)]
+                   px-4 py-1.5 flex items-center gap-3
+                   text-[11px] text-[var(--color-text-tertiary)] select-none"
+      >
+        <span>{wordCount} {wordCount === 1 ? "word" : "words"}</span>
+        <span className="opacity-40">·</span>
+        <span>{charCount} {charCount === 1 ? "char" : "chars"}</span>
       </div>
     </div>
   );
