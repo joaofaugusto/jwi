@@ -148,6 +148,8 @@ function TreeItem({
     onCreateChange,
     onCreateConfirm,
     onCreateCancel,
+    pinnedPaths,
+    onTogglePin,
   };
 
   return (
