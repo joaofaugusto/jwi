@@ -21,7 +21,9 @@
       "out/**/*"
     ],
     "win": {
-      "target": ["nsis"],
+      "target": [
+        "nsis"
+      ],
       "artifactName": "${productName}-Setup-${version}.${ext}"
     },
     "nsis": {
@@ -29,11 +31,15 @@
       "allowToChangeInstallationDirectory": true
     },
     "mac": {
-      "target": ["dmg"],
+      "target": [
+        "dmg"
+      ],
       "category": "public.app-category.productivity"
     }
   },
-  "dependencies": {},
+  "dependencies": {
+    "marked": "^18.0.3"
+  },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.0",
     "@types/node": "^20.14.0",
