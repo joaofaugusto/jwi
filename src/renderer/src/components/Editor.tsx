@@ -233,6 +233,61 @@ export default function Editor({ path, content, initialScrollTop, onChange, onSc
     setTimeout(() => { ta.selectionStart = start + 2; ta.selectionEnd = start + 5; ta.focus(); }, 0);
   }, [content, onChange]);
 
+  // Keep a ref to content so async FileReader callbacks always see the latest value
+  const contentRef = useRef(content);
+  contentRef.current = content;
+
+  const processImageFile = useCallback(
+    (file: File, cursorPos: number) => {
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        const dataUri = ev.target?.result as string;
+        if (!dataUri) return;
+        const altText = file.name ? file.name.replace(/\.[^.]+$/, "") : "image";
+        const mdSyntax = `\n![${altText}](${dataUri})\n`;
+        const cur = contentRef.current;
+        onChange(cur.slice(0, cursorPos) + mdSyntax + cur.slice(cursorPos));
+        setTimeout(() => {
+          const ta = textareaRef.current;
+          if (!ta) return;
+          const newPos = cursorPos + mdSyntax.length;
+          ta.selectionStart = newPos;
+          ta.selectionEnd = newPos;
+          ta.focus();
+        }, 0);
+      };
+      reader.readAsDataURL(file);
+    },
+    [onChange],
+  );
+
+  const handlePaste = useCallback(
+    (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+      const imageItem = Array.from(e.clipboardData.items).find(
+        (it) => it.kind === "file" && it.type.startsWith("image/"),
+      );
+      if (!imageItem) return;
+      e.preventDefault();
+      const file = imageItem.getAsFile();
+      if (!file) return;
+      processImageFile(file, e.currentTarget.selectionStart);
+    },
+    [processImageFile],
+  );
+
+  const handleDrop = useCallback(
+    (e: React.DragEvent<HTMLTextAreaElement>) => {
+      const images = Array.from(e.dataTransfer.files).filter((f) =>
+        f.type.startsWith("image/"),
+      );
+      if (images.length === 0) return;
+      e.preventDefault();
+      const cursor = e.currentTarget.selectionStart;
+      images.forEach((file, i) => setTimeout(() => processImageFile(file, cursor), i * 100));
+    },
+    [processImageFile],
+  );
+
   // Close export menu on outside click
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -349,6 +404,49 @@ export default function Editor({ path, content, initialScrollTop, onChange, onSc
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
       const ta = e.currentTarget;
+
+      // Enter — auto-continue lists
+      if (e.key === "Enter" && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
+        const cursor = ta.selectionStart;
+        const nextNl = content.indexOf("\n", cursor);
+        const atLineEnd = nextNl === -1 ? cursor === content.length : cursor === nextNl;
+        if (atLineEnd) {
+          const lineStart = content.lastIndexOf("\n", cursor - 1) + 1;
+          const line = content.slice(lineStart, cursor);
+          // Empty bullet/ordered → remove marker and stop list
+          const emptyBullet = line.match(/^(\s*)([-*+]) ?$/);
+          const emptyOrdered = line.match(/^(\s*)\d+\. ?$/);
+          if (emptyBullet || emptyOrdered) {
+            e.preventDefault();
+            const indent = (emptyBullet ?? emptyOrdered)![1];
+            const newContent = content.slice(0, lineStart) + indent + content.slice(cursor);
+            onChange(newContent);
+            const pos = lineStart + indent.length;
+            setTimeout(() => { ta.selectionStart = pos; ta.selectionEnd = pos; }, 0);
+            return;
+          }
+          // Unordered bullet with content → continue
+          const bullet = line.match(/^(\s*)([-*+]) .+$/);
+          if (bullet) {
+            e.preventDefault();
+            const ins = `\n${bullet[1]}${bullet[2]} `;
+            onChange(content.slice(0, cursor) + ins + content.slice(cursor));
+            const pos = cursor + ins.length;
+            setTimeout(() => { ta.selectionStart = pos; ta.selectionEnd = pos; }, 0);
+            return;
+          }
+          // Ordered item with content → continue with next number
+          const ordered = line.match(/^(\s*)(\d+)\. .+$/);
+          if (ordered) {
+            e.preventDefault();
+            const ins = `\n${ordered[1]}${parseInt(ordered[2]) + 1}. `;
+            onChange(content.slice(0, cursor) + ins + content.slice(cursor));
+            const pos = cursor + ins.length;
+            setTimeout(() => { ta.selectionStart = pos; ta.selectionEnd = pos; }, 0);
+            return;
+          }
+        }
+      }
 
       // Cmd/Ctrl+S — force save
       if ((e.ctrlKey || e.metaKey) && e.key === "s") {
@@ -703,6 +801,9 @@ export default function Editor({ path, content, initialScrollTop, onChange, onSc
               value={content}
               onChange={(e) => onChange(e.target.value)}
               onKeyDown={handleKeyDown}
+              onPaste={handlePaste}
+              onDrop={handleDrop}
+              onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "copy"; }}
               onMouseUp={handleTextareaMouseUp}
               onSelect={(e) => {
                 if (e.currentTarget.selectionStart === e.currentTarget.selectionEnd)
