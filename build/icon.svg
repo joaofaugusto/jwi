@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Background -->
+  <rect width="512" height="512" rx="112" fill="#0f172a"/>
+
+  <!-- Pencil rotated -45deg, geometrically centered at (256,256) -->
+  <g transform="rotate(-45 256 256)">
+    <!-- Eraser -->
+    <rect x="218" y="96" width="76" height="36" rx="12" fill="#fb7185"/>
+    <!-- Metal ferrule -->
+    <rect x="218" y="126" width="76" height="16" fill="#94a3b8"/>
+    <!-- Body -->
+    <rect x="218" y="142" width="76" height="218" fill="#fde047"/>
+    <!-- Highlight -->
+    <rect x="264" y="142" width="18" height="218" rx="4" fill="rgba(255,255,255,0.22)"/>
+    <!-- Wood tip -->
+    <polygon points="218,360 294,360 256,400" fill="#c4975a"/>
+    <!-- Lead -->
+    <polygon points="236,392 276,392 256,416" fill="#1e293b"/>
+  </g>
+</svg>
