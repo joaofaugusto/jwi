@@ -722,7 +722,7 @@ export default function Editor({ path, content, initialScrollTop, onChange, onSc
           }, 150);
         }}
       >
-        <div className="max-w-2xl mx-auto w-full px-12 py-10 flex flex-col flex-1">
+        <div className="w-full px-10 py-10 flex flex-col flex-1">
         {/* Title + toggle */}
         <div className="flex items-start justify-between mb-1">
           <h1
