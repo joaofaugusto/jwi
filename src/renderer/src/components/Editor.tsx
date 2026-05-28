@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { marked } from "marked";
+import katex from "katex";
 import { Eye, Pencil, ChevronUp, ChevronDown, X, Bold, Italic, Strikethrough, Code, Highlighter, Heading1, Heading2, Heading3, List, ListOrdered, Quote, Link as LinkIcon, Image as ImageIcon, Download } from "lucide-react";
 
 interface Props {
@@ -34,9 +35,45 @@ function buildHighlightHtml(
 }
 
 function renderMarkdown(md: string): string {
-  // Pre-process ==highlight== → <mark> before passing to marked
-  const pre = md.replace(/==(.*?)==/gs, (_, t) => `<mark>${t}</mark>`);
-  return marked.parse(pre) as string;
+  const blockMath: string[] = [];
+  const inlineMath: string[] = [];
+
+  // Extract block math $$...$$ before marked touches it
+  let s = md.replace(/\$\$([\s\S]*?)\$\$/g, (_, tex) => {
+    blockMath.push(tex);
+    return `JWIMATHBLOCK${blockMath.length - 1}END`;
+  });
+
+  // Extract inline math $...$ (single-line, not empty)
+  s = s.replace(/\$([^$\n]+?)\$/g, (_, tex) => {
+    inlineMath.push(tex);
+    return `JWIMATHINLINE${inlineMath.length - 1}END`;
+  });
+
+  // Pre-process ==highlight== → <mark>
+  s = s.replace(/==(.*?)==/gs, (_, t) => `<mark>${t}</mark>`);
+
+  let html = marked.parse(s) as string;
+
+  // Restore block math
+  html = html.replace(/JWIMATHBLOCK(\d+)END/g, (_, i) => {
+    try {
+      return `<div class="math-display">${katex.renderToString(blockMath[+i].trim(), { displayMode: true, throwOnError: false })}</div>`;
+    } catch {
+      return `<pre class="math-error">$$${blockMath[+i]}$$</pre>`;
+    }
+  });
+
+  // Restore inline math
+  html = html.replace(/JWIMATHINLINE(\d+)END/g, (_, i) => {
+    try {
+      return katex.renderToString(inlineMath[+i].trim(), { displayMode: false, throwOnError: false });
+    } catch {
+      return `<code class="math-error">$${inlineMath[+i]}$</code>`;
+    }
+  });
+
+  return html;
 }
 
 const TEXT_STYLE: React.CSSProperties = {
@@ -100,7 +137,9 @@ function generateExportHtml(title: string, tags: string[], rendered: string): st
     : "";
   return `<!DOCTYPE html><html lang="en"><head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>${title}</title><style>
+<title>${title}</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<style>
 body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;font-size:15px;line-height:1.75;color:#1c1c1e;max-width:760px;margin:0 auto;padding:56px 32px}
 h1{font-size:1.9em;font-weight:600;line-height:1.3;margin:0 0 0.3em}h2{font-size:1.5em;font-weight:600;line-height:1.3;margin-top:1.5em;margin-bottom:0.4em}h3{font-size:1.2em;font-weight:600;margin-top:1.5em;margin-bottom:0.4em}h4,h5,h6{font-weight:600;margin-top:1.2em;margin-bottom:0.3em}
 p{margin-bottom:0.9em}a{color:#007aff;text-decoration:none}a:hover{text-decoration:underline}
@@ -821,9 +860,8 @@ export default function Editor({ path, content, initialScrollTop, onChange, onSc
         {/* Preview mode */}
         {mode === "preview" && (
           <div
-            className="markdown-body flex-1 cursor-text"
+            className="markdown-body flex-1"
             dangerouslySetInnerHTML={{ __html: renderedHtml }}
-            onClick={() => setMode("edit")}
           />
         )}
       </div>

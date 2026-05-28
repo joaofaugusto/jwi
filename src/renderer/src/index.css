@@ -208,3 +208,14 @@ mark {
     background: var(--color-bg-secondary);
     font-weight: 600;
 }
+
+.markdown-body .math-display {
+    overflow-x: auto;
+    margin: 1em 0;
+    text-align: center;
+}
+
+.markdown-body .math-error {
+    color: var(--color-error);
+    font-size: 0.85em;
+}
