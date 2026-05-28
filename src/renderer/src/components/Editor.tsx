@@ -1,6 +1,13 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { marked } from "marked";
 import katex from "katex";
+import katexCssRaw from "katex/dist/katex.min.css?raw";
+
+// Embed CSS inline with CDN-absolute font URLs so exported HTML is self-contained
+const KATEX_EXPORT_CSS = (katexCssRaw as string).replace(
+  /url\(fonts\//g,
+  "url(https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/fonts/",
+);
 import { Eye, Pencil, ChevronUp, ChevronDown, X, Bold, Italic, Strikethrough, Code, Highlighter, Heading1, Heading2, Heading3, List, ListOrdered, Quote, Link as LinkIcon, Image as ImageIcon, Download } from "lucide-react";
 
 interface Props {
@@ -148,7 +155,7 @@ function generateExportHtml(title: string, tags: string[], rendered: string): st
   return `<!DOCTYPE html><html lang="en"><head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${title}</title>
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<style>${KATEX_EXPORT_CSS}</style>
 <style>
 body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;font-size:15px;line-height:1.75;color:#1c1c1e;max-width:760px;margin:0 auto;padding:56px 32px}
 h1{font-size:1.9em;font-weight:600;line-height:1.3;margin:0 0 0.3em}h2{font-size:1.5em;font-weight:600;line-height:1.3;margin-top:1.5em;margin-bottom:0.4em}h3{font-size:1.2em;font-weight:600;margin-top:1.5em;margin-bottom:0.4em}h4,h5,h6{font-weight:600;margin-top:1.2em;margin-bottom:0.3em}

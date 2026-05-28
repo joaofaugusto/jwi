@@ -152,10 +152,12 @@ ipcMain.handle("export:pdf", async (_, title: string, html: string) => {
     show: false,
     width: 900,
     height: 1200,
-    webPreferences: { contextIsolation: true, nodeIntegration: false },
+    webPreferences: { contextIsolation: true, nodeIntegration: false, webSecurity: false },
   });
   await printWin.loadFile(tempPath);
-  await new Promise<void>((r) => setTimeout(r, 400));
+  // Wait for KaTeX math fonts to finish loading before rendering to PDF
+  await printWin.webContents.executeJavaScript("document.fonts.ready");
+  await new Promise<void>((r) => setTimeout(r, 150));
   const pdfBuffer = await printWin.webContents.printToPDF({ pageSize: "A4", printBackground: false });
   writeFileSync(filePath, pdfBuffer);
   printWin.destroy();
