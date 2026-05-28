@@ -34,44 +34,54 @@ function buildHighlightHtml(
   return result + escapeHtml(content.slice(last));
 }
 
+function renderKatex(tex: string, display: boolean): string {
+  try {
+    return display
+      ? `<div class="math-display">${katex.renderToString(tex.trim(), { displayMode: true, throwOnError: false })}</div>`
+      : katex.renderToString(tex.trim(), { displayMode: false, throwOnError: false });
+  } catch {
+    return display
+      ? `<pre class="math-error">$$${tex}$$</pre>`
+      : `<code class="math-error">$${tex}$</code>`;
+  }
+}
+
 function renderMarkdown(md: string): string {
   const blockMath: string[] = [];
   const inlineMath: string[] = [];
 
-  // Extract block math $$...$$ before marked touches it
+  // $$...$$ — strip any inner \[...\] delimiters (common mistake when pasting from LaTeX)
   let s = md.replace(/\$\$([\s\S]*?)\$\$/g, (_, tex) => {
+    const clean = tex.trim().replace(/^\\\[/, "").replace(/\\\]$/, "").trim();
+    blockMath.push(clean);
+    return `JWIMATHBLOCK${blockMath.length - 1}END`;
+  });
+
+  // \[...\] standalone display math
+  s = s.replace(/\\\[([\s\S]*?)\\\]/g, (_, tex) => {
     blockMath.push(tex);
     return `JWIMATHBLOCK${blockMath.length - 1}END`;
   });
 
-  // Extract inline math $...$ (single-line, not empty)
+  // \(...\) inline math
+  s = s.replace(/\\\(([\s\S]*?)\\\)/g, (_, tex) => {
+    inlineMath.push(tex);
+    return `JWIMATHINLINE${inlineMath.length - 1}END`;
+  });
+
+  // $...$ inline math (single-line, not empty)
   s = s.replace(/\$([^$\n]+?)\$/g, (_, tex) => {
     inlineMath.push(tex);
     return `JWIMATHINLINE${inlineMath.length - 1}END`;
   });
 
-  // Pre-process ==highlight== → <mark>
+  // ==highlight== → <mark>
   s = s.replace(/==(.*?)==/gs, (_, t) => `<mark>${t}</mark>`);
 
   let html = marked.parse(s) as string;
 
-  // Restore block math
-  html = html.replace(/JWIMATHBLOCK(\d+)END/g, (_, i) => {
-    try {
-      return `<div class="math-display">${katex.renderToString(blockMath[+i].trim(), { displayMode: true, throwOnError: false })}</div>`;
-    } catch {
-      return `<pre class="math-error">$$${blockMath[+i]}$$</pre>`;
-    }
-  });
-
-  // Restore inline math
-  html = html.replace(/JWIMATHINLINE(\d+)END/g, (_, i) => {
-    try {
-      return katex.renderToString(inlineMath[+i].trim(), { displayMode: false, throwOnError: false });
-    } catch {
-      return `<code class="math-error">$${inlineMath[+i]}$</code>`;
-    }
-  });
+  html = html.replace(/JWIMATHBLOCK(\d+)END/g, (_, i) => renderKatex(blockMath[+i], true));
+  html = html.replace(/JWIMATHINLINE(\d+)END/g, (_, i) => renderKatex(inlineMath[+i], false));
 
   return html;
 }
